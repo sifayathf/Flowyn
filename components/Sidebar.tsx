@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Account, Folder } from '../types';
 import { ICONS } from '../constants';
 
@@ -13,6 +13,8 @@ interface SidebarProps {
   onOpenCalendar: () => void;
   onOpenSettings: () => void;
   onCompose: () => void;
+  onMoveEmails: (ids: string[], targetFolderId: string) => void;
+  onCreateFolder: (name: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -24,8 +26,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectFolder,
   onOpenCalendar,
   onOpenSettings,
-  onCompose
+  onCompose,
+  onMoveEmails,
+  onCreateFolder
 }) => {
+  const [isCreating, setIsCreating] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const handleDrop = (e: React.DragEvent, folderId: string) => {
+    e.preventDefault();
+    setDragOverId(null);
+    const data = e.dataTransfer.getData('emails');
+    if (data) {
+      const ids = JSON.parse(data);
+      onMoveEmails(ids, folderId);
+    }
+  };
+
+  const handleCreate = () => {
+    if (newFolderName.trim()) {
+      onCreateFolder(newFolderName);
+      setNewFolderName('');
+      setIsCreating(false);
+    }
+  };
+
   return (
     <div className="w-64 border-r border-zinc-200 dark:border-zinc-800 flex flex-col h-full bg-zinc-50 dark:bg-zinc-950 transition-all">
       <div className="p-8 pb-4 flex items-center space-x-3">
@@ -68,37 +94,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className="mt-6 px-8 text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-widest mb-2">
-        Connected Spaces
-      </div>
-      <div className="px-4 py-1 space-y-1 max-h-40 overflow-y-auto no-scrollbar">
-        {accounts.map(acc => (
-          <button
-            key={acc.id}
-            onClick={() => onSelectAccount(acc.id)}
-            className={`w-full flex items-center px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${selectedAccountId === acc.id ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-900'}`}
-          >
-            <div className="mr-3 w-6 h-6 rounded-lg border-2 shadow-inner overflow-hidden" style={{ borderColor: acc.color }}>
-              <img src={acc.avatar} className="w-full h-full object-cover" alt="" />
-            </div>
-            <span className="truncate">{acc.email}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-6 px-8 text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-widest mb-2">
         Folders
+        <button onClick={() => setIsCreating(true)} className="ml-2 text-indigo-500 hover:text-indigo-400">+</button>
       </div>
+      
       <div className="px-4 py-1 flex-1 space-y-1 overflow-y-auto no-scrollbar">
+        {isCreating && (
+          <div className="px-4 py-2">
+            <input 
+              autoFocus
+              className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 ring-indigo-500"
+              placeholder="Folder name..."
+              value={newFolderName}
+              onChange={e => setNewFolderName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreate()}
+              onBlur={() => !newFolderName && setIsCreating(false)}
+            />
+          </div>
+        )}
         {folders.map(folder => (
           <button
             key={folder.id}
             onClick={() => onSelectFolder(folder.id)}
-            className={`w-full flex items-center px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${activeFolderId === folder.id ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-900'}`}
+            onDragOver={e => { e.preventDefault(); setDragOverId(folder.id); }}
+            onDragLeave={() => setDragOverId(null)}
+            onDrop={e => handleDrop(e, folder.id)}
+            className={`w-full flex items-center px-4 py-2.5 rounded-xl text-xs font-bold transition-all relative ${
+              activeFolderId === folder.id 
+                ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' 
+                : 'text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-900'
+            } ${dragOverId === folder.id ? 'ring-2 ring-indigo-500 bg-indigo-500/5' : ''}`}
           >
             <div className="mr-3 text-zinc-400 opacity-60">
               {(ICONS as any)[folder.name] || ICONS.Inbox}
             </div>
-            <span className="flex-1 text-left capitalize">{folder.name}</span>
+            <span className="flex-1 text-left capitalize truncate">{folder.name}</span>
             {folder.count && folder.count > 0 ? (
               <span className="text-[10px] bg-indigo-500/10 dark:bg-indigo-500/20 px-2 py-0.5 rounded-full text-indigo-600 dark:text-indigo-400 font-black">
                 {folder.count}

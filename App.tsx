@@ -9,8 +9,10 @@ import { Composer } from './components/Composer';
 import { CalendarView } from './components/CalendarView';
 import { SettingsModal } from './components/SettingsModal';
 import { ContextMenu } from './components/ContextMenu';
+import { BatchToolbar } from './components/BatchToolbar';
 import { EMAILS, ACCOUNTS, FOLDERS } from './mockData';
 import { Email, Account, Folder } from './types';
+import { classifyEmails } from './geminiService';
 
 const App: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>(() => {
@@ -23,6 +25,11 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : EMAILS;
   });
 
+  const [folders, setFolders] = useState<Folder[]>(() => {
+    const saved = localStorage.getItem('flowyn_folders');
+    return saved ? JSON.parse(saved) : FOLDERS;
+  });
+
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('flowyn_theme');
     return (saved as 'dark' | 'light') || 'dark';
@@ -32,22 +39,24 @@ const App: React.FC = () => {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [activeFolderId, setActiveFolderId] = useState<string>('inbox');
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+  const [selectedEmailIds, setSelectedEmailIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAiSidebarOpen, setIsAiSidebarOpen] = useState(false);
+  const [isOrganizing, setIsOrganizing] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, email: Email } | null>(null);
 
   useEffect(() => {
     localStorage.setItem('flowyn_accounts', JSON.stringify(accounts));
     localStorage.setItem('flowyn_emails', JSON.stringify(emails));
+    localStorage.setItem('flowyn_folders', JSON.stringify(folders));
     localStorage.setItem('flowyn_theme', theme);
     document.documentElement.className = theme;
-  }, [accounts, emails, theme]);
+  }, [accounts, emails, folders, theme]);
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
-  // Derived folder counts for unread messages
   const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     emails.forEach(email => {
@@ -58,12 +67,12 @@ const App: React.FC = () => {
     return counts;
   }, [emails]);
 
-  const updatedFolders = useMemo(() => {
-    return FOLDERS.map(f => ({
+  const displayFolders = useMemo(() => {
+    return folders.map(f => ({
       ...f,
       count: folderCounts[f.id] || 0
     }));
-  }, [folderCounts]);
+  }, [folders, folderCounts]);
 
   const filteredEmails = useMemo(() => {
     return emails.filter(e => {
@@ -71,8 +80,7 @@ const App: React.FC = () => {
       const matchesFolder = e.folderId === activeFolderId;
       const matchesSearch = 
         e.subject.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        e.from.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.body.toLowerCase().includes(searchQuery.toLowerCase());
+        e.from.name.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesAccount && matchesFolder && matchesSearch;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [emails, selectedAccountId, activeFolderId, searchQuery]);
@@ -87,15 +95,37 @@ const App: React.FC = () => {
       if (action === 'delete') return { ...e, folderId: 'trash' };
       return e;
     }));
-    
-    // Close thread view if message was archived or deleted
     if (action === 'archive' || action === 'delete') {
-      if (selectedEmail?.id === emailId) {
-        setSelectedEmail(null);
-      }
+      if (selectedEmail?.id === emailId) setSelectedEmail(null);
     }
-    // Close context menu if open
-    setContextMenu(null);
+  };
+
+  const moveEmails = (ids: string[], targetFolderId: string) => {
+    setEmails(prev => prev.map(e => ids.includes(e.id) ? { ...e, folderId: targetFolderId } : e));
+    setSelectedEmailIds(new Set());
+    if (ids.includes(selectedEmail?.id || '')) setSelectedEmail(null);
+  };
+
+  const handleMagicOrganize = async () => {
+    if (filteredEmails.length === 0) return;
+    setIsOrganizing(true);
+    try {
+      const suggestions = await classifyEmails(filteredEmails.slice(0, 10), folders);
+      setEmails(prev => prev.map(e => suggestions[e.id] ? { ...e, folderId: suggestions[e.id] } : e));
+    } catch (err) {
+      console.error("AI Organize failed", err);
+    } finally {
+      setIsOrganizing(false);
+    }
+  };
+
+  const createFolder = (name: string) => {
+    const newFolder: Folder = {
+      id: name.toLowerCase().replace(/\s+/g, '-'),
+      name: name,
+      type: 'CUSTOM'
+    };
+    setFolders(prev => [...prev, newFolder]);
   };
 
   const handleSend = (newEmail: Email) => {
@@ -103,45 +133,37 @@ const App: React.FC = () => {
     setIsComposerOpen(false);
   };
 
-  const handleSync = (newEmails: Email[]) => {
-    // Merge new emails, avoiding duplicates by ID
-    setEmails(prev => {
-      const existingIds = new Set(prev.map(e => e.id));
-      const uniqueNew = newEmails.filter(e => !existingIds.has(e.id));
-      return [...uniqueNew, ...prev];
+  const toggleSelectEmail = (id: string) => {
+    setSelectedEmailIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-    // Immediately select the first synced email to show progress
-    if (newEmails.length > 0) {
-      setSelectedEmail(newEmails[0]);
-    }
   };
-
-  const handleContextMenu = (e: React.MouseEvent, email: Email) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, email });
-  };
-
-  const openComposer = () => setIsComposerOpen(true);
 
   return (
     <div className="flex h-screen w-screen bg-white dark:bg-zinc-950 transition-colors duration-500 overflow-hidden select-none">
       <Sidebar 
         accounts={accounts}
-        folders={updatedFolders}
+        folders={displayFolders}
         selectedAccountId={selectedAccountId}
         activeFolderId={activeFolderId}
         onSelectAccount={setSelectedAccountId}
         onSelectFolder={(id) => { 
           setActiveFolderId(id); 
           setView('INBOX'); 
-          setSelectedEmail(null); 
+          setSelectedEmail(null);
+          setSelectedEmailIds(new Set());
         }}
         onOpenCalendar={() => setView('CALENDAR')}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        onCompose={openComposer}
+        onCompose={() => setIsComposerOpen(true)}
+        onMoveEmails={moveEmails}
+        onCreateFolder={createFolder}
       />
 
-      <div className="flex flex-col flex-1 min-w-0">
+      <div className="flex flex-col flex-1 min-w-0 relative">
         <TopBar 
           theme={theme}
           onToggleTheme={toggleTheme}
@@ -156,11 +178,18 @@ const App: React.FC = () => {
               <MessageList 
                 emails={filteredEmails}
                 selectedEmail={selectedEmail}
+                selectedEmailIds={selectedEmailIds}
                 onSelectEmail={(email) => {
                   setSelectedEmail(email);
                   if (!email.isRead) handleAction(email.id, 'read');
                 }}
-                onContextMenu={handleContextMenu}
+                onToggleSelect={toggleSelectEmail}
+                onContextMenu={(e, email) => {
+                  e.preventDefault();
+                  setContextMenu({ x: e.clientX, y: e.clientY, email });
+                }}
+                onMagicOrganize={handleMagicOrganize}
+                isOrganizing={isOrganizing}
               />
               <ThreadView 
                 email={selectedEmail}
@@ -179,6 +208,23 @@ const App: React.FC = () => {
             />
           )}
         </div>
+
+        {selectedEmailIds.size > 0 && (
+          <BatchToolbar 
+            count={selectedEmailIds.size}
+            onAction={(action) => {
+              // Fix for line 217/218: Cast the array to string[] to resolve 'unknown[]' type inference issue
+              const ids = Array.from(selectedEmailIds) as string[];
+              if (action === 'archive') moveEmails(ids, 'archive');
+              if (action === 'delete') moveEmails(ids, 'trash');
+              if (action === 'read') {
+                setEmails(prev => prev.map(e => ids.includes(e.id) ? { ...e, isRead: true } : e));
+                setSelectedEmailIds(new Set());
+              }
+            }}
+            onClear={() => setSelectedEmailIds(new Set())}
+          />
+        )}
       </div>
 
       {isComposerOpen && (
@@ -194,7 +240,7 @@ const App: React.FC = () => {
         <SettingsModal 
           accounts={accounts}
           setAccounts={setAccounts}
-          onEmailsSync={handleSync}
+          onEmailsSync={(newMails) => setEmails(prev => [...newMails, ...prev])}
           onClose={() => setIsSettingsOpen(false)}
         />
       )}
