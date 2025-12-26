@@ -10,7 +10,7 @@ import { CalendarView } from './components/CalendarView';
 import { SettingsModal } from './components/SettingsModal';
 import { ContextMenu } from './components/ContextMenu';
 import { EMAILS, ACCOUNTS, FOLDERS } from './mockData';
-import { Email, Account, Folder, CalendarEvent, AppState } from './types';
+import { Email, Account, Folder } from './types';
 
 const App: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>(() => {
@@ -24,7 +24,8 @@ const App: React.FC = () => {
   });
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    return (localStorage.getItem('flowyn_theme') as 'dark' | 'light') || 'dark';
+    const saved = localStorage.getItem('flowyn_theme');
+    return (saved as 'dark' | 'light') || 'dark';
   });
 
   const [view, setView] = useState<'INBOX' | 'CALENDAR'>('INBOX');
@@ -46,25 +47,55 @@ const App: React.FC = () => {
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
+  // Derived folder counts for unread messages
+  const folderCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    emails.forEach(email => {
+      if (!email.isRead) {
+        counts[email.folderId] = (counts[email.folderId] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [emails]);
+
+  const updatedFolders = useMemo(() => {
+    return FOLDERS.map(f => ({
+      ...f,
+      count: folderCounts[f.id] || 0
+    }));
+  }, [folderCounts]);
+
   const filteredEmails = useMemo(() => {
     return emails.filter(e => {
       const matchesAccount = !selectedAccountId || e.accountId === selectedAccountId;
       const matchesFolder = e.folderId === activeFolderId;
-      const matchesSearch = e.subject.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            e.from.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = 
+        e.subject.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        e.from.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        e.body.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesAccount && matchesFolder && matchesSearch;
-    });
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [emails, selectedAccountId, activeFolderId, searchQuery]);
 
-  const handleAction = (emailId: string, action: 'star' | 'read' | 'archive' | 'delete') => {
+  const handleAction = (emailId: string, action: 'star' | 'read' | 'archive' | 'delete' | 'unread') => {
     setEmails(prev => prev.map(e => {
       if (e.id !== emailId) return e;
       if (action === 'star') return { ...e, isStarred: !e.isStarred };
-      if (action === 'read') return { ...e, isRead: !e.isRead };
+      if (action === 'read') return { ...e, isRead: true };
+      if (action === 'unread') return { ...e, isRead: false };
       if (action === 'archive') return { ...e, folderId: 'archive' };
       if (action === 'delete') return { ...e, folderId: 'trash' };
       return e;
     }));
+    
+    // Close thread view if message was archived or deleted
+    if (action === 'archive' || action === 'delete') {
+      if (selectedEmail?.id === emailId) {
+        setSelectedEmail(null);
+      }
+    }
+    // Close context menu if open
+    setContextMenu(null);
   };
 
   const handleSend = (newEmail: Email) => {
@@ -73,7 +104,16 @@ const App: React.FC = () => {
   };
 
   const handleSync = (newEmails: Email[]) => {
-    setEmails(prev => [...newEmails, ...prev]);
+    // Merge new emails, avoiding duplicates by ID
+    setEmails(prev => {
+      const existingIds = new Set(prev.map(e => e.id));
+      const uniqueNew = newEmails.filter(e => !existingIds.has(e.id));
+      return [...uniqueNew, ...prev];
+    });
+    // Immediately select the first synced email to show progress
+    if (newEmails.length > 0) {
+      setSelectedEmail(newEmails[0]);
+    }
   };
 
   const handleContextMenu = (e: React.MouseEvent, email: Email) => {
@@ -81,17 +121,24 @@ const App: React.FC = () => {
     setContextMenu({ x: e.clientX, y: e.clientY, email });
   };
 
+  const openComposer = () => setIsComposerOpen(true);
+
   return (
     <div className="flex h-screen w-screen bg-white dark:bg-zinc-950 transition-colors duration-500 overflow-hidden select-none">
       <Sidebar 
         accounts={accounts}
-        folders={FOLDERS}
+        folders={updatedFolders}
         selectedAccountId={selectedAccountId}
         activeFolderId={activeFolderId}
         onSelectAccount={setSelectedAccountId}
-        onSelectFolder={(id) => { setActiveFolderId(id); setView('INBOX'); }}
+        onSelectFolder={(id) => { 
+          setActiveFolderId(id); 
+          setView('INBOX'); 
+          setSelectedEmail(null); 
+        }}
         onOpenCalendar={() => setView('CALENDAR')}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onCompose={openComposer}
       />
 
       <div className="flex flex-col flex-1 min-w-0">
@@ -109,7 +156,10 @@ const App: React.FC = () => {
               <MessageList 
                 emails={filteredEmails}
                 selectedEmail={selectedEmail}
-                onSelectEmail={setSelectedEmail}
+                onSelectEmail={(email) => {
+                  setSelectedEmail(email);
+                  if (!email.isRead) handleAction(email.id, 'read');
+                }}
                 onContextMenu={handleContextMenu}
               />
               <ThreadView 
@@ -153,7 +203,7 @@ const App: React.FC = () => {
         <ContextMenu 
           {...contextMenu} 
           onClose={() => setContextMenu(null)}
-          onAction={(action) => handleAction(contextMenu.email.id, action)}
+          onAction={(action) => handleAction(contextMenu.email.id, action as any)}
         />
       )}
     </div>

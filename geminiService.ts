@@ -6,29 +6,31 @@ import { Email, Thread } from './types';
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * Generates a set of realistic emails for a newly connected account.
+ * Generates a set of 10 realistic emails for a newly connected account.
  * This simulates a real IMAP/API sync by creating content based on the provider.
  */
 export const fetchSimulatedEmails = async (accountEmail: string, type: string): Promise<Email[]> => {
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Generate 5 realistic email objects in JSON format for a ${type} account owned by ${accountEmail}. 
-    Include diverse topics: a meeting invite, a newsletter, a technical alert, and a personal message.
+    contents: `Generate exactly 10 realistic email objects in JSON format for a ${type} account owned by ${accountEmail}. 
+    Include diverse topics: professional collaborations, newsletters, security alerts, travel bookings, and personal notes.
+    Ensure dates are spread across the last 72 hours.
     Return an array of objects matching this structure:
     {
-      id: string (msg-random),
-      threadId: string (th-random),
-      from: { name: string, email: string, avatar: string (use picsum.photos) },
-      subject: string,
-      snippet: string,
-      body: string (HTML allowed),
-      date: string (ISO within last 24h),
-      isRead: boolean,
-      isStarred: boolean,
-      isPinned: boolean,
-      isImportant: boolean,
-      labels: string[],
-      folderId: "inbox"
+      "id": "msg-random-id",
+      "threadId": "th-random-id",
+      "from": { "name": "Sender Name", "email": "sender@example.com", "avatar": "https://picsum.photos/seed/random/40/40" },
+      "to": [{ "name": "Receiver Name", "email": "${accountEmail}" }],
+      "subject": "Clear Subject Line",
+      "snippet": "Short 1-sentence preview",
+      "body": "Full HTML email body with paragraphs",
+      "date": "ISO-8601-String",
+      "isRead": false,
+      "isStarred": false,
+      "isPinned": false,
+      "isImportant": true,
+      "labels": ["Category"],
+      "folderId": "inbox"
     }`,
     config: {
       responseMimeType: "application/json",
@@ -45,6 +47,16 @@ export const fetchSimulatedEmails = async (accountEmail: string, type: string): 
                 name: { type: Type.STRING },
                 email: { type: Type.STRING },
                 avatar: { type: Type.STRING }
+              }
+            },
+            to: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  email: { type: Type.STRING }
+                }
               }
             },
             subject: { type: Type.STRING },

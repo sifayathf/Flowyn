@@ -22,26 +22,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ accounts, setAccou
     
     setIsSyncing(true);
     
-    // Simulate initial sync delay
-    const newAcc: Account = {
-      id: `acc-${Date.now()}`,
-      email: emailInput,
-      name: emailInput.split('@')[0],
-      type: loginStep,
-      color: '#' + Math.floor(Math.random()*16777215).toString(16),
-      avatar: `https://picsum.photos/seed/${emailInput}/40/40`,
-      status: 'CONNECTED'
-    };
-
     try {
-      // Fetch "real" simulated data from AI to populate the inbox
+      // Simulate real auth latency
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      const newAcc: Account = {
+        id: emailInput, // Use email as unique ID for simplicity in this demo
+        email: emailInput,
+        name: emailInput.split('@')[0],
+        type: loginStep,
+        color: loginStep === 'GMAIL' ? '#ea4335' : (loginStep === 'OUTLOOK' ? '#00a4ef' : '#7b2cb1'),
+        avatar: `https://picsum.photos/seed/${emailInput}/40/40`,
+        status: 'CONNECTED'
+      };
+
+      // Fetch the last 10 emails from the simulated server (Gemini)
       const simulatedMails = await fetchSimulatedEmails(emailInput, loginStep);
       
-      setAccounts(prev => [...prev, newAcc]);
+      setAccounts(prev => {
+        // Prevent duplicate accounts
+        if (prev.find(a => a.id === newAcc.id)) return prev;
+        return [...prev, newAcc];
+      });
+      
       onEmailsSync(simulatedMails);
       resetForm();
     } catch (err) {
       console.error("Login failed", err);
+      alert("Failed to connect account. Please check your AI API Key.");
     } finally {
       setIsSyncing(false);
     }
@@ -56,36 +64,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ accounts, setAccou
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-zinc-950/70 backdrop-blur-lg p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-zinc-950/80 backdrop-blur-md p-4 animate-in fade-in duration-300">
       <div className="bg-white dark:bg-zinc-950 w-full max-w-xl border border-zinc-200 dark:border-zinc-800 rounded-[40px] shadow-2xl flex flex-col overflow-hidden">
         <div className="p-8 border-b border-zinc-100 dark:border-zinc-900 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-900/20">
           <div>
-            <h2 className="text-2xl font-black dark:text-white text-zinc-900 tracking-tight">Settings</h2>
-            <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest mt-1">Configure your workspace</p>
+            <h2 className="text-2xl font-black dark:text-white text-zinc-900 tracking-tight">Flowyn Hub</h2>
+            <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest mt-1">Manage your connected spaces</p>
           </div>
           <button onClick={onClose} className="p-3 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full transition-all">
             <svg className="w-6 h-6 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-10 space-y-12 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-10 space-y-12 no-scrollbar min-h-[450px]">
           {isSyncing ? (
             <div className="flex flex-col items-center justify-center py-20 animate-in fade-in zoom-in-95">
-              <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-6" />
-              <h3 className="text-lg font-black dark:text-white text-zinc-900">Synchronizing Mailbox...</h3>
-              <p className="text-sm text-zinc-500 mt-2">Connecting to {loginStep} secure servers</p>
+              <div className="relative w-20 h-20 mb-8">
+                <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full"></div>
+                <div className="absolute inset-0 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+              <h3 className="text-xl font-black dark:text-white text-zinc-900 tracking-tight">Syncing Mailbox...</h3>
+              <p className="text-sm font-bold text-zinc-500 mt-2 text-center max-w-xs">
+                Establishing encrypted handshake and fetching your last 10 messages from {loginStep}.
+              </p>
             </div>
           ) : (
             <>
               <section>
                 <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-[0.2em]">Active Accounts</h3>
+                  <h3 className="text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-[0.2em]">Connected Accounts</h3>
                   {!isAdding && (
                     <button 
                       onClick={() => setIsAdding(true)}
                       className="px-4 py-2 bg-indigo-600 text-white text-xs font-black rounded-xl hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20"
                     >
-                      + Link New
+                      + Connect New
                     </button>
                   )}
                 </div>
@@ -98,15 +111,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ accounts, setAccou
                           <button 
                             key={type}
                             onClick={() => setLoginStep(type as AccountType)}
-                            className="flex flex-col items-center p-6 rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 hover:border-indigo-500 transition-all group"
+                            className="flex flex-col items-center p-6 rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 hover:border-indigo-500 transition-all group hover:bg-white dark:hover:bg-zinc-800"
                           >
-                            <div className="w-10 h-10 mb-3 rounded-xl bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center group-hover:scale-110 transition-transform">
-                              <span className="font-black text-zinc-400 group-hover:text-indigo-500">{type[0]}</span>
+                            <div className="w-12 h-12 mb-3 rounded-2xl bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center group-hover:scale-110 transition-transform">
+                              <span className="font-black text-zinc-500 group-hover:text-indigo-500">{type[0]}</span>
                             </div>
-                            <span className="text-[10px] font-black tracking-widest text-zinc-500">{type}</span>
+                            <span className="text-[10px] font-black tracking-widest text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100">{type}</span>
                           </button>
                         ))}
-                        <button onClick={resetForm} className="col-span-2 mt-4 text-xs font-bold text-zinc-400 hover:text-zinc-600 transition-colors">Cancel Connection</button>
+                        <button onClick={resetForm} className="col-span-2 mt-4 text-xs font-bold text-zinc-400 hover:text-zinc-600 transition-colors">Go Back</button>
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -114,7 +127,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ accounts, setAccou
                           <button onClick={() => setLoginStep(null)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                           </button>
-                          <h4 className="text-sm font-black text-zinc-900 dark:text-zinc-100">Login with {loginStep}</h4>
+                          <h4 className="text-sm font-black text-zinc-900 dark:text-zinc-100 uppercase">Login to {loginStep}</h4>
                         </div>
                         <input 
                           type="email" 
@@ -130,26 +143,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ accounts, setAccou
                           value={passInput}
                           onChange={e => setPassInput(e.target.value)}
                         />
-                        <div className="bg-indigo-500/10 p-4 rounded-xl mb-4 border border-indigo-500/20">
-                           <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 leading-relaxed uppercase tracking-wider">
-                             Flowyn uses OAuth 2.0 and local encryption. Your credentials never leave this machine.
-                           </p>
-                        </div>
                         <button 
                           onClick={connectAccount} 
-                          className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl text-xs tracking-widest hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20"
+                          className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl text-xs tracking-[0.2em] hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20 mt-4 active:scale-95"
                         >
-                          SIGN IN & SYNC
+                          SIGN IN & FETCH 10 MAILS
                         </button>
+                        <p className="text-[10px] text-zinc-400 text-center font-bold uppercase tracking-wider">Secure OAuth handshake via Flowyn Edge</p>
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {accounts.length === 0 ? (
-                      <div className="text-center py-10 opacity-30">
-                        <p className="text-sm font-bold uppercase tracking-widest">No accounts linked</p>
-                      </div>
+                      <div className="py-12 text-center text-zinc-400 font-bold uppercase tracking-widest text-xs opacity-50">No accounts connected</div>
                     ) : (
                       accounts.map(acc => (
                         <div key={acc.id} className="flex items-center justify-between p-6 rounded-[28px] bg-zinc-50 dark:bg-zinc-900/30 border border-zinc-100 dark:border-zinc-800 group transition-all hover:shadow-xl hover:shadow-zinc-500/5">
@@ -162,14 +169,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ accounts, setAccou
                             </div>
                             <div>
                               <div className="text-sm font-black dark:text-white text-zinc-900">{acc.email}</div>
-                              <div className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mt-0.5">{acc.type} • Encrypted Connection</div>
+                              <div className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mt-0.5">{acc.type} • Last sync: just now</div>
                             </div>
                           </div>
                           <button 
                             onClick={() => setAccounts(prev => prev.filter(a => a.id !== acc.id))}
                             className="opacity-0 group-hover:opacity-100 text-[10px] font-black text-red-500 uppercase tracking-widest px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-all"
                           >
-                            Kill Session
+                            Disconnect
                           </button>
                         </div>
                       ))
@@ -179,15 +186,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ accounts, setAccou
               </section>
 
               <section>
-                <h3 className="text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-[0.2em] mb-8">AI Engine</h3>
+                <h3 className="text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-[0.2em] mb-8">AI Synchronization</h3>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-6 rounded-3xl bg-indigo-600/5 border border-indigo-600/10">
+                  <div className="flex items-center justify-between p-6 rounded-3xl bg-zinc-50 dark:bg-zinc-900/30 border border-zinc-100 dark:border-zinc-800">
                     <div>
-                      <div className="text-sm font-black dark:text-white text-zinc-900">Neural Smart Search</div>
-                      <p className="text-[10px] text-zinc-400 mt-1">Deep index your inbox with semantic search</p>
+                      <div className="text-sm font-black dark:text-white text-zinc-900">Neural Sync Depth</div>
+                      <p className="text-[10px] text-zinc-400 mt-1 uppercase font-bold tracking-widest">Active: Latest 10 messages</p>
                     </div>
-                    <div className="w-12 h-6 bg-indigo-600 rounded-full relative p-1 cursor-pointer">
-                      <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
+                    <div className="flex space-x-1">
+                      {[10, 25, 50].map(val => (
+                        <div key={val} className={`px-2 py-1 rounded-md text-[10px] font-black ${val === 10 ? 'bg-indigo-600 text-white' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400'}`}>
+                          {val}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
