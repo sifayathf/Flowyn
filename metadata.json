@@ -1,0 +1,7 @@
+{
+  "name": "Flowyn Mail",
+  "description": "The ultra-modern, AI-first email experience. High-performance unified inbox, intelligent thread automation, and seamless calendar integration.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
