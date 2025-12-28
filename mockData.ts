@@ -1,8 +1,23 @@
 
 import { Account, Email, Folder, Thread } from './types';
 
+// Updated the mock account to include required protocol and linkedServices properties
 export const ACCOUNTS: Account[] = [
-  { id: 'acc-1', email: 'alex@flowyn.io', name: 'Alex Rivera', type: 'GMAIL', color: '#ef4444', avatar: 'https://picsum.photos/seed/alex/40/40', status: 'CONNECTED' },
+  { 
+    id: 'acc-1', 
+    email: 'alex@flowyn.io', 
+    name: 'Alex Rivera', 
+    type: 'GMAIL', 
+    protocol: 'IMAP',
+    color: '#ef4444', 
+    avatar: 'https://picsum.photos/seed/alex/40/40', 
+    status: 'CONNECTED',
+    linkedServices: {
+      calendar: true,
+      contacts: true,
+      chat: true
+    }
+  },
 ];
 
 export const FOLDERS: Folder[] = [

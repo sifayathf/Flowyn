@@ -1,32 +1,76 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { Email, Thread, Folder } from './types';
+import { Email, Thread, Folder, Contact, ChatMessage, AccountType, ProtocolType } from './types';
 
-export const fetchSimulatedEmails = async (accountEmail: string, type: string): Promise<Email[]> => {
-  // Initialize AI client inside function to ensure up-to-date API key is used
+/**
+ * Simulates checking server settings via AI to ensure validity.
+ * Returns a detailed status report for the connection steps.
+ */
+export const validateAccountSettings = async (details: any): Promise<{ 
+  success: boolean; 
+  error?: string;
+  steps?: { name: string; status: 'success' | 'error' | 'pending' }[]
+}> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Generate exactly 10 realistic email objects in JSON format for a ${type} account owned by ${accountEmail}. 
-    Include diverse topics: professional collaborations, newsletters, security alerts, travel bookings, and personal notes.
-    Ensure dates are spread across the last 72 hours.
-    Return an array of objects matching this structure:
-    {
-      "id": "msg-random-id",
-      "threadId": "th-random-id",
-      "from": { "name": "Sender Name", "email": "sender@example.com", "avatar": "https://picsum.photos/seed/random/40/40" },
-      "to": [{ "name": "Receiver Name", "email": "${accountEmail}" }],
-      "subject": "Clear Subject Line",
-      "snippet": "Short 1-sentence preview",
-      "body": "Full HTML email body with paragraphs",
-      "date": "ISO-8601-String",
-      "isRead": false,
-      "isStarred": false,
-      "isPinned": false,
-      "isImportant": true,
-      "labels": ["Category"],
-      "folderId": "inbox"
-    }`,
+    contents: `Validate these simulated email server settings: ${JSON.stringify(details)}. 
+    Return a JSON object:
+    { 
+      "success": boolean, 
+      "error": string | null,
+      "steps": [
+        {"name": "Credentials", "status": "success" | "error"},
+        {"name": "Incoming Server", "status": "success" | "error"},
+        {"name": "Outgoing SMTP", "status": "success" | "error"}
+      ]
+    }
+    If email ends in '@error.com', make it fail at the 'Credentials' step.
+    If host contains 'offline', make it fail at 'Incoming Server'.`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          success: { type: Type.BOOLEAN },
+          error: { type: Type.STRING },
+          steps: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                status: { type: Type.STRING }
+              },
+              required: ["name", "status"]
+            }
+          }
+        },
+        required: ["success", "steps"]
+      }
+    }
+  });
+  try {
+    const data = JSON.parse(response.text || '{"success": false, "error": "Unknown error", "steps": []}');
+    return data;
+  } catch {
+    return { 
+      success: false, 
+      error: "Validation server unreachable",
+      steps: [
+        { name: "Credentials", status: "error" },
+        { name: "Incoming Server", status: "error" },
+        { name: "Outgoing SMTP", status: "error" }
+      ]
+    };
+  }
+};
+
+export const fetchSimulatedEmails = async (accountEmail: string, type: string): Promise<Email[]> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: `Generate 10 emails for a ${type} account (${accountEmail}). Return as JSON matching the Email interface. Dates within 48h.`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -65,86 +109,128 @@ export const fetchSimulatedEmails = async (accountEmail: string, type: string): 
             labels: { type: Type.ARRAY, items: { type: Type.STRING } },
             folderId: { type: Type.STRING }
           },
-          required: ["id", "threadId", "from", "subject", "snippet", "body", "date", "isRead", "labels", "folderId"]
+          required: ["id", "threadId", "from", "subject", "snippet", "body", "date", "isRead", "folderId"]
         }
       }
     }
   });
-
   try {
     const data = JSON.parse(response.text || "[]");
-    return data.map((e: any) => ({
-      ...e,
-      accountId: accountEmail,
-      attachments: []
-    }));
-  } catch (err) {
-    console.error("Failed to parse simulated emails", err);
-    return [];
-  }
+    return data.map((e: any) => ({ ...e, accountId: accountEmail, attachments: [] }));
+  } catch { return []; }
 };
 
-/**
- * Bulk organizes emails by suggesting target folders for each message.
- */
-export const classifyEmails = async (emails: Email[], folders: Folder[]): Promise<Record<string, string>> => {
-  // Initialize AI client inside function to ensure up-to-date API key is used
+export const fetchSimulatedContacts = async (accountEmail: string): Promise<Contact[]> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const emailContext = emails.map(e => ({ id: e.id, subject: e.subject, from: e.from.name, snippet: e.snippet }));
-  const folderNames = folders.map(f => f.id);
-
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `You are an inbox assistant. Given a list of emails and a list of target folders, decide which folder each email belongs in.
-    Available Folders: ${folderNames.join(', ')}
-    Emails: ${JSON.stringify(emailContext)}
-    Return JSON mapping: { "emailId": "folderId" }`,
+    contents: `Generate 15 professional contacts for the address book of ${accountEmail}. Return as JSON array.`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
-        type: Type.OBJECT,
-        description: "Mapping of email IDs to suggested folder IDs"
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            email: { type: Type.STRING },
+            company: { type: Type.STRING },
+            avatar: { type: Type.STRING }
+          },
+          required: ["name", "email"]
+        }
       }
     }
   });
-
   try {
-    return JSON.parse(response.text || '{}');
-  } catch {
-    return {};
-  }
+    const data = JSON.parse(response.text || "[]");
+    return data.map((c: any) => ({ ...c, id: Math.random().toString(), accountId: accountEmail }));
+  } catch { return []; }
+};
+
+export const fetchSimulatedChats = async (accountEmail: string): Promise<ChatMessage[]> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: `Generate a conversation history (10 messages) for a team chat synced with ${accountEmail}. Return as JSON array.`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            id: { type: Type.STRING },
+            senderId: { type: Type.STRING },
+            senderName: { type: Type.STRING },
+            text: { type: Type.STRING },
+            timestamp: { type: Type.STRING }
+          },
+          required: ["id", "senderName", "text", "timestamp"]
+        }
+      }
+    }
+  });
+  try {
+    const data = JSON.parse(response.text || "[]");
+    return data.map((m: any) => ({ ...m, accountId: accountEmail }));
+  } catch { return []; }
+};
+
+export const classifyEmails = async (emails: Email[], folders: Folder[]): Promise<Record<string, string>> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const folderNames = folders.map(f => f.id);
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: `Decide folders for these emails based on content. Folders available: ${folderNames.join(', ')}. Emails: ${JSON.stringify(emails.slice(0, 5).map(e => ({ id: e.id, subject: e.subject })))}`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            emailId: { type: Type.STRING },
+            folderId: { type: Type.STRING }
+          },
+          required: ["emailId", "folderId"]
+        }
+      }
+    }
+  });
+  try {
+    const items = JSON.parse(response.text || '[]');
+    const map: Record<string, string> = {};
+    items.forEach((item: any) => {
+      map[item.emailId] = item.folderId;
+    });
+    return map;
+  } catch { return {}; }
 };
 
 export const summarizeThread = async (thread: Thread): Promise<string> => {
-  // Initialize AI client inside function to ensure up-to-date API key is used
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const content = thread.emails.map(e => `${e.from.name}: ${e.snippet}`).join('\n');
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Summarize the following email conversation in 3 concise bullet points:\n\n${content}`,
-    config: { temperature: 0.7 }
+    contents: `Summarize: ${thread.subject}. Content: ${thread.emails.map(e => e.snippet).join(' ')}`,
   });
-  return response.text || "Summary unavailable.";
+  return response.text || "No summary.";
 };
 
 export const generateDraft = async (prompt: string, context?: Email): Promise<string> => {
-  // Initialize AI client inside function to ensure up-to-date API key is used
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const contextStr = context ? `Context Email Subject: ${context.subject}\nBody: ${context.body}` : '';
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `You are an executive assistant. Generate a professional email draft based on this prompt: "${prompt}".\n\n${contextStr}`,
-    config: { temperature: 1 }
+    contents: `Draft email based on: "${prompt}". Context: ${context?.subject || 'none'}`,
   });
   return response.text || "";
 };
 
 export const triageEmail = async (email: Email): Promise<{ importance: number; category: string }> => {
-  // Initialize AI client inside function to ensure up-to-date API key is used
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Analyze this email and return JSON with priority (0-10) and category (Work, Personal, Promo, Social).\n\nSubject: ${email.subject}\nSnippet: ${email.snippet}`,
+    contents: `Priority (0-10) and Category for: ${email.subject}. Return JSON {importance, category}.`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -157,9 +243,5 @@ export const triageEmail = async (email: Email): Promise<{ importance: number; c
       }
     },
   });
-  try {
-    return JSON.parse(response.text || '{"importance": 5, "category": "Work"}');
-  } catch {
-    return { importance: 5, category: "Work" };
-  }
+  try { return JSON.parse(response.text || '{"importance": 5, "category": "General"}'); } catch { return { importance: 5, category: "General" }; }
 };

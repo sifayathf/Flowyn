@@ -129,7 +129,7 @@ export const Composer: React.FC<ComposerProps> = ({ accounts, onClose, onSend, r
               className="flex items-center space-x-3 px-5 py-2.5 bg-indigo-600/10 dark:bg-indigo-500/10 hover:bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 rounded-2xl text-xs font-black border border-indigo-500/20 transition-all shadow-sm"
             >
               {ICONS.Sparkles}
-              <span>FLOWYN MAGIC</span>
+              <span>FLOWYN CORE</span>
             </button>
           </div>
           <div className="flex space-x-6 items-center">

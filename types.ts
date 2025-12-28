@@ -1,14 +1,21 @@
 
 export type AccountType = 'GMAIL' | 'OUTLOOK' | 'IMAP' | 'YAHOO' | 'PROTON';
+export type ProtocolType = 'IMAP' | 'POP3' | 'EXCHANGE';
 
 export interface Account {
   id: string;
   email: string;
   name: string;
   type: AccountType;
+  protocol: ProtocolType;
   color: string;
   avatar?: string;
   status: 'CONNECTED' | 'SYNCING' | 'ERROR';
+  linkedServices: {
+    calendar: boolean;
+    contacts: boolean;
+    chat: boolean;
+  };
 }
 
 export interface Folder {
@@ -24,6 +31,25 @@ export interface CalendarEvent {
   title: string;
   date: string;
   description?: string;
+  accountId: string;
+}
+
+export interface Contact {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  avatar?: string;
+  company?: string;
+  accountId: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: string;
   accountId: string;
 }
 
@@ -46,10 +72,6 @@ export interface Email {
   folderId: string;
 }
 
-/**
- * Added Thread interface to resolve import errors in mockData.ts, geminiService.ts, and AISidebar.tsx.
- * Represents a collection of emails belonging to the same conversation.
- */
 export interface Thread {
   id: string;
   emails: Email[];
@@ -60,5 +82,5 @@ export interface Thread {
 
 export interface AppState {
   theme: 'dark' | 'light';
-  view: 'INBOX' | 'CALENDAR' | 'SETTINGS';
+  view: 'INBOX' | 'CALENDAR' | 'CONTACTS' | 'CHAT' | 'SETTINGS';
 }
